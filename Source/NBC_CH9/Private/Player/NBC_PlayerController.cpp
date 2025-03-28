@@ -2,15 +2,18 @@
 
 
 #include "NBC_CH9/Public/Player/NBC_PlayerController.h"
-
-#include "EngineUtils.h"
 #include "Blueprint/UserWidget.h"
 #include "GameMode/NBC_GameMode.h"
 #include "Kismet/GameplayStatics.h"
-#include "Kismet/KismetSystemLibrary.h"
 #include "NBC_CH9/NBC_CH9.h"
+#include "Net/UnrealNetwork.h"
 #include "Player/NBC_PlayerState.h"
 #include "UI/NBC_ChatInput.h"
+
+ANBC_PlayerController::ANBC_PlayerController()
+{
+	bReplicates = true;
+}
 
 void ANBC_PlayerController::BeginPlay()
 {
@@ -18,7 +21,6 @@ void ANBC_PlayerController::BeginPlay()
 	FInputModeUIOnly InputModeUIOnly;
 	SetInputMode(InputModeUIOnly);
 	bShowMouseCursor = true;
-
 	if (IsLocalController() == false)
 	{
 		return;
@@ -31,6 +33,20 @@ void ANBC_PlayerController::BeginPlay()
 			ChatInputWidgetInstance->AddToViewport();
 		}
 	}
+	if (IsValid(NotificationTextWidgetClass) == true)
+	{
+		NotificationTextWidgetInstance = CreateWidget<UUserWidget>(this, NotificationTextWidgetClass);
+		if (IsValid(NotificationTextWidgetInstance) == true)
+		{
+			NotificationTextWidgetInstance->AddToViewport();
+		}
+	}
+}
+
+void ANBC_PlayerController::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ThisClass, NotificationText);
 }
 
 void ANBC_PlayerController::ClientRPCPrintChatMessageString_Implementation(const FString& InChatMessageString)

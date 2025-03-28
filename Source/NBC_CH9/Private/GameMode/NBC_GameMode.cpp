@@ -103,9 +103,10 @@ void ANBC_GameMode::PrintChatMessageString(ANBC_PlayerController* InChattingPlay
 	FString ChatMessageString = InChatMessageString;
 	int Index = InChatMessageString.Len() - 3;
 	FString GuessNumberString = InChatMessageString.RightChop(Index);
-	if (IsGuessNumberString(GuessNumberString) == true)
+	if (IsGuessNumberString(GuessNumberString) == true && InChattingPlayerController == GetCurrentTurnPlayerController())
 	{
 		FString JudgeResultString = JudgeResult(SecretNumberString, GuessNumberString);
+		IncreaseGuessCount(InChattingPlayerController);
 		for (TActorIterator<ANBC_PlayerController> It(GetWorld()); It; ++It)
 		{
 			ANBC_PlayerController* NBC_PlayerController = *It;
@@ -113,6 +114,9 @@ void ANBC_GameMode::PrintChatMessageString(ANBC_PlayerController* InChattingPlay
 			{
 				FString CombinedMessageString = InChatMessageString + TEXT(" -> ") + JudgeResultString;
 				NBC_PlayerController->ClientRPCPrintChatMessageString(CombinedMessageString);
+
+				int32 StrikeCount = FCString::Atoi(*JudgeResultString.Left(1));
+				JudgeGame(InChattingPlayerController, StrikeCount);
 			}
 		}
 	}
@@ -138,12 +142,87 @@ void ANBC_GameMode::IncreaseGuessCount(ANBC_PlayerController* InChattingPlayerCo
 	}
 }
 
+void ANBC_GameMode::ResetGame()
+{
+	SecretNumberString = GenerateSecretNumber();
+
+	for (const auto& NBC_PlayerController : AllPlayerControllers)
+	{
+		ANBC_PlayerState* NBC_PlayerState = NBC_PlayerController->GetPlayerState<ANBC_PlayerState>();
+		if (IsValid(NBC_PlayerState) == true)
+		{
+			NBC_PlayerState->CurrentGuessCount = 0;
+		}
+	}
+	CurrentTurnIndex = 0;
+}
+
+void ANBC_GameMode::JudgeGame(ANBC_PlayerController* InChattingPlayerController, int InStrikeCount)
+{
+	if (3 == InStrikeCount)
+	{
+		ANBC_PlayerState* NBC_PlayerState = InChattingPlayerController->GetPlayerState<ANBC_PlayerState>();
+		for (const auto& NBC_PlayerController : AllPlayerControllers)
+		{
+			if (IsValid(NBC_PlayerState) == true)
+			{
+				FString CombinedMessageString = NBC_PlayerState->PlayerNameString + TEXT(" has won the game.");
+				NBC_PlayerController->NotificationText = FText::FromString(CombinedMessageString);
+
+				ResetGame();
+			}
+		}
+	}
+	else
+	{
+		bool bIsDraw = true;
+		for (const auto& NBC_PlayerController : AllPlayerControllers)
+		{
+			ANBC_PlayerState* NBC_PlayerState = NBC_PlayerController->GetPlayerState<ANBC_PlayerState>();
+			if (IsValid(NBC_PlayerState) == true)
+			{
+				if (NBC_PlayerState->CurrentGuessCount < NBC_PlayerState->MaxGuessCount)
+				{
+					bIsDraw = false;
+					break;
+				}
+			}
+		}
+
+		if (true == bIsDraw)
+		{
+			for (const auto& NBC_PlayerController : AllPlayerControllers)
+			{
+				NBC_PlayerController->NotificationText = FText::FromString(TEXT("Draw..."));
+
+				ResetGame();
+			}
+		}
+	}
+}
+
+ANBC_PlayerController* ANBC_GameMode::GetCurrentTurnPlayerController() const
+{
+	if (AllPlayerControllers.IsEmpty() == true)
+	{
+		return nullptr;
+	}
+	
+	if (AllPlayerControllers.IsValidIndex(CurrentTurnIndex))
+	{
+		return AllPlayerControllers[CurrentTurnIndex];
+	}
+	
+	return nullptr;
+}
+
 void ANBC_GameMode::OnPostLogin(AController* NewPlayer)
 {
 	Super::OnPostLogin(NewPlayer);
 	ANBC_PlayerController* NBC_PlayerController = Cast<ANBC_PlayerController>(NewPlayer);
 	if (IsValid(NBC_PlayerController) == true)
 	{
+		NBC_PlayerController->NotificationText = FText::FromString(TEXT("Connected to the game server."));
 		AllPlayerControllers.Add(NBC_PlayerController);
 
 		ANBC_PlayerState* NBC_PlayerState = NBC_PlayerController->GetPlayerState<ANBC_PlayerState>();
@@ -157,6 +236,15 @@ void ANBC_GameMode::OnPostLogin(AController* NewPlayer)
 		{
 			NBC_GameStateBase->MulticastRPCBroadcastLoginMessage(NBC_PlayerState->PlayerNameString);
 		}
+
+		if (CurrentTurnIndex == AllPlayerControllers.Num() - 1)
+		{
+			NBC_PlayerController->NotificationText = FText::FromString(TEXT("It's your turn!"));
+		}
+		else
+		{
+			NBC_PlayerController->NotificationText = FText::FromString(TEXT("Waiting for other player..."));			
+		}
 	}
 }
 
@@ -164,4 +252,30 @@ void ANBC_GameMode::BeginPlay()
 {
 	Super::BeginPlay();
 	SecretNumberString = GenerateSecretNumber();
+	GetWorldTimerManager().SetTimer(MainTimerHandle, this, &ThisClass::OnMainTimerElapsed, 15.f, true);
+}
+
+void ANBC_GameMode::OnMainTimerElapsed()
+{
+	if (AllPlayerControllers.Num() == 0)
+	{
+		return;
+	}
+
+	CurrentTurnIndex = (CurrentTurnIndex + 1) % AllPlayerControllers.Num();
+
+	for (int32 i = 0; i < AllPlayerControllers.Num(); ++i)
+	{
+		if (IsValid(AllPlayerControllers[i]) == true)
+		{
+			if (i == CurrentTurnIndex)
+			{
+				AllPlayerControllers[i]->NotificationText = FText::FromString(TEXT("It's your turn!"));
+			}
+			else
+			{
+				AllPlayerControllers[i]->NotificationText = FText::FromString(TEXT("Waiting for other player..."));
+			}
+		}
+	}
 }

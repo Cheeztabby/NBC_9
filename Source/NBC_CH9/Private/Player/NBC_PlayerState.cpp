@@ -19,7 +19,7 @@ void ANBC_PlayerState::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty
 }
 
 
-FString ANBC_PlayerState::GetPlayerInfoString()
+FString ANBC_PlayerState::GetPlayerInfoString() const
 {
 	FString PlayerInfoString = PlayerNameString + TEXT("(") + FString::FromInt(CurrentGuessCount) + TEXT("/") + FString::FromInt(MaxGuessCount) + TEXT(")");
 	return PlayerInfoString;
